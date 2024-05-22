@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Multiplayer</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            font-family: 'Arial Black', sans-serif;
+            color: #333;
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px #aaa;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        #scoreboard {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 18px;
+            background-color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+        }
+        #timer {
+            position: absolute;
+            top: -30px;
+            left: 10px;
+            font-size: 18px;
+            display: none;
+            background-color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+        }
+        #gameCanvas {
+            border: 2px solid #333;
+            background-color: #fff;
+        }
+        #usernameInput {
+            margin-top: 20px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin-left: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #28a745;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <h1>Snake Battle</h1>
+    <div id="gameContainer">
+        <div id="scoreboard">Blue: 0, Red: 0</div>
+        <div id="timer"></div>
+        <canvas id="gameCanvas" width="600" height="600"></canvas>
+    </div>
+    <div id="usernameInput">
+        <input type="text" id="username" placeholder="Inserisci il tuo username">
+        <button onclick="startGame()">Inizia</button>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const canvas = document.getElementById('gameCanvas');
+        const context = canvas.getContext('2d');
+        const gridSize = 20;
+        let players = {};
+        let wins = { blue: 0, red: 0 };
+        let username = '';
+        let timerCount = 3;
+        let startText = '';
+        let userSnakeColor = '#f0f0f0';
+
+        function startGame() {
+            username = document.getElementById('username').value.trim();
+            if (username !== '') {
+                socket.emit('playerReady', username);
+                document.getElementById('usernameInput').style.display = 'none';
+            }
+        }
+
+        socket.on('startTimer', () => {
+            startTimer();
+        });
+
+        function startTimer() {
+            const timerElement = document.getElementById('timer');
+            timerElement.style.display = 'block';
+            timerCount = 3;
+            const timerInterval = setInterval(() => {
+                timerElement.innerText = `Il gioco inizia in: ${timerCount}`;
+                timerCount--;
+                if (timerCount < 0) {
+                    clearInterval(timerInterval);
+                    timerElement.style.display = 'none';
+                    startText = 'Vai!';
+                    setTimeout(() => {
+                        startText = '';
+                    }, 1000);
+                }
+            }, 1000);
+        }
+
+        socket.on('startGame', ({ players: initialPlayers, wins: initialWins }) => {
+            players = initialPlayers;
+            wins = initialWins;
+            updateScoreboard();
+        });
+
+        socket.on('gameState', ({ players: updatedPlayers, wins: updatedWins }) => {
+            players = updatedPlayers;
+            wins = updatedWins;
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            drawStartText();
+            for (const id in players) {
+                drawSnake(players[id]);
+            }
+            updateScoreboard();
+        });
+
+        socket.on('gameOver', ({ winner, loser, wins: updatedWins }) => {
+            wins = updatedWins;
+            updateScoreboard();
+        });
+
+        socket.on('gameDraw', ({ players: drawPlayers }) => {
+            alert(`Pareggio tra ${drawPlayers.join(' e ')}!`);
+        });
+
+        socket.on('finalWinner', ({ winner }) => {
+            alert(`${winner} è il vincitore finale!`);
+            location.reload();
+        });
+
+        function updateScoreboard() {
+            const scoreboard = document.getElementById('scoreboard');
+            scoreboard.innerText = `Blue: ${wins.blue}, Red: ${wins.red}`;
+        }
+
+        function drawStartText() {
+            context.fillStyle = 'red';
+            context.font = '24px Arial';
+            context.fillText(startText, canvas.width / 2 - 20, canvas.height / 2);
+        }
+
+        function drawSnake(player) {
+            context.fillStyle = player.color;
+            if (player.username === username) {
+                userSnakeColor = player.color;
+            }
+            player.snake.forEach(segment => {
+                context.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
+            });
+            document.body.style.backgroundColor = userSnakeColor;
+        }
+
+        document.addEventListener('keydown', (event) => {
+            const direction = getDirectionFromKey(event.key);
+            if (direction) {
+                socket.emit('playerMovement', { direction });
+            }
+        });
+
+        function getDirectionFromKey(key) {
+            switch (key) {
+                case 'ArrowUp':
+                    return 'up';
+                case 'ArrowDown':
+                    return 'down';
+                case 'ArrowLeft':
+                    return 'left';
+                case 'ArrowRight':
+                    return 'right';
+                default:
+                    return null;
+            }
+        }
+    </script>
+</body>
+</html>
